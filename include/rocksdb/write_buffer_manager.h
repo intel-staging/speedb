@@ -49,7 +49,9 @@ class WriteBufferManager final {
   // memory usage to drop down.
   explicit WriteBufferManager(size_t _buffer_size,
                               std::shared_ptr<Cache> cache = {},
-                              bool allow_stall = false);
+                              // // // // bool allow_stall = false);
+                              // PATCH FOR EREZ's TESTING
+                              bool allow_stall = true);
   // No copying allowed
   WriteBufferManager(const WriteBufferManager&) = delete;
   WriteBufferManager& operator=(const WriteBufferManager&) = delete;

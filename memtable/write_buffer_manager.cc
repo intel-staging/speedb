@@ -243,6 +243,10 @@ std::string WriteBufferManager::GetPrintableOptions() const {
            "size", buffer_size());
   ret.append(buffer);
 
+  snprintf(buffer, kBufferSize, "%*s: %d\n", field_width,
+           "allow_stall", allow_stall_);
+  ret.append(buffer);
+
   return ret;
 }
 
