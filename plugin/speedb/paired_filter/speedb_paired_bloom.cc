@@ -107,7 +107,7 @@ const char* SpdbPairedBloomFilterPolicy::kClassName() {
 }
 
 const char* SpdbPairedBloomFilterPolicy::kNickName() {
-  return "spdb.PairedBloomFilter";
+  return "speedb.PairedBloomFilter";
 }
 
 }  // namespace ROCKSDB_NAMESPACE
