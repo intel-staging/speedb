@@ -64,7 +64,6 @@ FilterBitsReader* SpdbPairedBloomFilterPolicy::GetFilterBitsReader(
   uint32_t len_with_meta = static_cast<uint32_t>(contents.size());
   const auto trailer_len = speedb_filter::FilterMetadata::kMetadataLen;
   if (len_with_meta <= trailer_len) {
-    assert(0);
     // filter is empty or broken. Treat like zero keys added.
     return new AlwaysFalseFilter();
   }

@@ -453,8 +453,6 @@ Slice SpdbPairedBloomBitsBuilder::Finish(std::unique_ptr<const char[]>* buf,
   const size_t num_entries = hash_entries_info_.entries.size();
   size_t len_with_metadata = CalculateSpace(num_entries);
 
-  // // printf("len_with_metadata #1:%d\n", (int)len_with_metadata);
-
   std::unique_ptr<char[]> mutable_buf;
   std::unique_ptr<CacheReservationManager::CacheReservationHandle>
       final_filter_cache_res_handle;
@@ -464,8 +462,6 @@ Slice SpdbPairedBloomBitsBuilder::Finish(std::unique_ptr<const char[]>* buf,
   assert(len_with_metadata >= speedb_filter::FilterMetadata::kMetadataLen);
   // Max size supported by implementation
   assert(len_with_metadata <= kMaxSupportLenWithMetadata);
-
-  // // printf("len_with_metadata #2:%d\n", (int)len_with_metadata);
 
   // Cache reservation for mutable_buf
   if (cache_res_mgr_) {
@@ -509,7 +505,7 @@ Slice SpdbPairedBloomBitsBuilder::Finish(std::unique_ptr<const char[]>* buf,
       std::make_pair(&mutable_buf, len_with_metadata);
   TEST_SYNC_POINT_CALLBACK("XXPH3FilterBitsBuilder::Finish::TamperFilter",
                            &TEST_arg_pair);
-  
+
   Slice rv(mutable_buf.get(), len_with_metadata);
   *buf = std::move(mutable_buf);
   final_filter_cache_res_handles_.push_back(
@@ -562,7 +558,8 @@ size_t SpdbPairedBloomBitsBuilder::RoundDownUsableSpace(size_t available_size) {
   }
 
   // round down to multiple of a Batch
-  rv = std::max<size_t>((rv / kBatchSizeInBytes) * kBatchSizeInBytes, kBatchSizeInBytes);
+  rv = std::max<size_t>((rv / kBatchSizeInBytes) * kBatchSizeInBytes,
+                        kBatchSizeInBytes);
 
   return rv + speedb_filter::FilterMetadata::kMetadataLen;
 }

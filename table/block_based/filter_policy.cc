@@ -1208,27 +1208,18 @@ Status XXPH3FilterBitsBuilder::MaybePostVerify(const Slice& filter_content) {
 
   std::unique_ptr<FilterBitsReader> bits_reader(GetBitsReader(filter_content));
 
-  int num_mismtches = 0;
-  int first_mismatch_idx = -1;
-  // for (uint64_t h : hash_entries_info_.entries) {
-  for (auto i = 0U; i < hash_entries_info_.entries.size(); ++i) {
-    auto h = hash_entries_info_.entries[i];
+  for (uint64_t h : hash_entries_info_.entries) {
     // The current approach will not detect corruption from XXPH3Filter to
     // AlwaysTrueFilter, which can lead to performance cost later due to
     // AlwaysTrueFilter not filtering anything. But this cost is acceptable
     // given the extra implementation complixity to detect such case.
     bool may_match = bits_reader->HashMayMatch(h);
     if (!may_match) {
-      ++num_mismtches;
-      if (first_mismatch_idx == -1) first_mismatch_idx = i;
       s = Status::Corruption("Corrupted filter content");
-      // // break;
+      break;
     }
   }
 
-  if (num_mismtches > 0) {
-    fprintf(stderr, "FILTER CORRUPTION, num_mismtches:%d, num_entries:%d, first_mismatch:%d\n", num_mismtches, (int)hash_entries_info_.entries.size(), first_mismatch_idx);
-  }
   ResetEntries();
   return s;
 }
