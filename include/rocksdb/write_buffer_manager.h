@@ -49,7 +49,8 @@ class WriteBufferManager final {
   // memory usage to drop down.
   explicit WriteBufferManager(size_t _buffer_size,
                               std::shared_ptr<Cache> cache = {},
-                              bool allow_stall = false);
+                              // // // bool allow_stall = false);
+                              bool allow_stall = true);
   // No copying allowed
   WriteBufferManager(const WriteBufferManager&) = delete;
   WriteBufferManager& operator=(const WriteBufferManager&) = delete;
@@ -151,6 +152,8 @@ class WriteBufferManager final {
   void MaybeEndWriteStall();
 
   void RemoveDBFromQueue(StallInterface* wbm_stall);
+
+  std::string GetPrintableOptions() const;
 
  private:
   std::atomic<size_t> buffer_size_;
