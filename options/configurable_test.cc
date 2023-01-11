@@ -795,6 +795,7 @@ void ConfigurableParamTest::TestConfigureOptions(
   while (found_one && !unused.empty()) {
     found_one = false;
     for (auto iter = unused.begin(); iter != unused.end();) {
+      // Why this change?
       Status s =
           copy->ConfigureOption(config_options, iter->first, iter->second);
       if (s.ok()) {

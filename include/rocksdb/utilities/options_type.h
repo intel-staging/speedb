@@ -109,6 +109,7 @@ enum class OptionTypeFlags : uint32_t {
   kDontSerialize = 0x02000,   // Don't serialize the option
   kDontPrepare = 0x04000,     // Don't prepare or sanitize this option
   kStringNameOnly = 0x08000,  // The option serializes to a name only
+  // Is it ok to combine kUseBaseAddress with all of the other values? Do all of the combinations make sense?
   kUseBaseAddress =
       0x10000,  // Pass the base (instead of offset) to option functions
 };
@@ -952,6 +953,7 @@ class OptionTypeInfo {
     if (static_cast<V>(*ptr) > maxvalue) *ptr = maxvalue;
   }
 
+  // There is already a ClipToRange() utility in db_impl.h - Why not add this utility to some utils file and use everywhere (avoid code duplication)?
   template <class T, class V>
   static void ClipToRange(T* ptr, V minvalue, V maxvalue) {
     ClipToMin(ptr, minvalue);

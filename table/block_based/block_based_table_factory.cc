@@ -283,9 +283,18 @@ static std::unordered_map<std::string, OptionTypeInfo>
              .SetPrepareFunc([](const ConfigOptions& /*opts*/,
                                 const std::string& /*name*/, void* addr) {
                auto bbto = static_cast<BlockBasedTableOptions*>(addr);
+               // However, if this option is handled before the block_cache option, then a block cache will be created
                if (bbto->no_block_cache) {
                  bbto->block_cache.reset();
+              // Does this depend in any way on the order? There is a block_cache option that is handled separately
+              // What is this option is handled first, sees that bbto->block_cache is null and creates a block cache.
+              // I think the total is harmless, the cache created here would be replaced by the actual cache that would 
+              // be created there
                } else if (bbto->block_cache == nullptr) {
+                // This code is copied from BlockBasedTableFactory::BlockBasedTableFactory() - Please avoid the duplication
+                // The following line wasn't copied - is that intentional?
+                //     co.low_pri_pool_ratio = 0.0;
+                // Anyway, copying should be avoided
                  LRUCacheOptions co;
                  co.capacity = 8 << 20;
                  // It makes little sense to pay overhead for mid-point
@@ -299,6 +308,7 @@ static std::unordered_map<std::string, OptionTypeInfo>
          {offsetof(struct BlockBasedTableOptions, block_size),
           OptionType::kSizeT, OptionVerificationType::kNormal,
           OptionTypeFlags::kMutable}},
+        // Why is this part of this pr?
         {"block_size_deviation",
          OptionTypeInfo(
              offsetof(struct BlockBasedTableOptions, block_size_deviation),
@@ -322,6 +332,7 @@ static std::unordered_map<std::string, OptionTypeInfo>
                }
                return Status::OK();
              })},
+        // Why is this part of this pr?
         {"block_restart_interval",
          OptionTypeInfo(
              offsetof(struct BlockBasedTableOptions, block_restart_interval),
@@ -341,6 +352,9 @@ static std::unordered_map<std::string, OptionTypeInfo>
                *interval = std::max(1, *interval);
                return Status::OK();
              })},
+        // How is it handled at the moment without this capability?
+        // Couldn't we implement the  SetParseFunc() before? Or is it now mandatory because we are using kUseBaseAddress?
+        // Duplicates (to a degree) in the index_type option 
         {"index_block_restart_interval",
          OptionTypeInfo(offsetof(struct BlockBasedTableOptions,
                                  index_block_restart_interval),
@@ -413,6 +427,8 @@ static std::unordered_map<std::string, OptionTypeInfo>
                }
                return Status::OK();
              })},
+          // Again, I am not sure if that depends on the order and the implications
+          // And again, what happens currently without the feature?
         {"partition_filters",
          OptionTypeInfo(
              offsetof(struct BlockBasedTableOptions, partition_filters),
@@ -562,6 +578,11 @@ BlockBasedTableFactory::BlockBasedTableFactory(
   // Initialize/Prepare the BlockBasedTableOptions
   // Note that comparable code is also implemented in the OptionTypeMap;
   // the code is needed here as well in order to support LITE mode
+
+
+  // Can't we use this code for both?
+  // What do we gain by doing it in the Options infra?
+  // And this code is not wrapped in #ifdef ROCKSDB_LITE?
   if (table_options_.flush_block_policy_factory == nullptr) {
     table_options_.flush_block_policy_factory.reset(
         new FlushBlockBySizePolicyFactory());
@@ -614,6 +635,7 @@ BlockBasedTableFactory::BlockBasedTableFactory(
     }
   }
   //**TODO: Move this code into PrepareOptions
+  // Why was this code moved from its original location?
   const auto table_reader_charged =
       table_options_.cache_usage_options.options_overrides
           .at(CacheEntryRole::kBlockBasedTableReader)
@@ -631,6 +653,7 @@ Status BlockBasedTableFactory::PrepareOptions(const ConfigOptions& opts) {
   Status s = TableFactory::PrepareOptions(opts);
   if (s.ok()) {
     //**TODO: Setup cache_res_mgr (move from InitializeOptions)
+    // What are the implications of the TODO (not done yet?)
   }
   return s;
 }
