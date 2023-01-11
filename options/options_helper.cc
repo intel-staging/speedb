@@ -928,14 +928,16 @@ Status OptionTypeInfo::Parse(const ConfigOptions& config_options,
     } else if (parse_func_ != nullptr) {
       ConfigOptions copy = config_options;
       copy.invoke_prepare_options = false;
-      // He should wrap this code in a utility function and call it rather than duplicate the code repeatedly
+      // He should wrap this code in a utility function and call it rather than
+      // duplicate the code repeatedly
       auto opt_addr = IsEnabled(OptionTypeFlags::kUseBaseAddress)
                           ? opt_ptr
                           : GetOffset(opt_ptr);
       return parse_func_(copy, opt_name, opt_value, opt_addr);
-    // Is there an assumption that if the parse_func is null kUseBaseAddress is disabled?
-    // Same question for any other place using GetOffset() - Are all of these uses OK? Is it not possible
-    // to have a kUseBaseAddress in these cases?
+      // Is there an assumption that if the parse_func is null kUseBaseAddress
+      // is disabled? Same question for any other place using GetOffset() - Are
+      // all of these uses OK? Is it not possible to have a kUseBaseAddress in
+      // these cases?
     } else if (ParseOptionHelper(GetOffset(opt_ptr), type_, opt_value)) {
       return Status::OK();
     } else if (IsConfigurable()) {

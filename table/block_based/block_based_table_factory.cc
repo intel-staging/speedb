@@ -283,18 +283,23 @@ static std::unordered_map<std::string, OptionTypeInfo>
              .SetPrepareFunc([](const ConfigOptions& /*opts*/,
                                 const std::string& /*name*/, void* addr) {
                auto bbto = static_cast<BlockBasedTableOptions*>(addr);
-               // However, if this option is handled before the block_cache option, then a block cache will be created
+               // However, if this option is handled before the block_cache
+               // option, then a block cache will be created
                if (bbto->no_block_cache) {
                  bbto->block_cache.reset();
-              // Does this depend in any way on the order? There is a block_cache option that is handled separately
-              // What is this option is handled first, sees that bbto->block_cache is null and creates a block cache.
-              // I think the total is harmless, the cache created here would be replaced by the actual cache that would 
-              // be created there
+                 // Does this depend in any way on the order? There is a
+                 // block_cache option that is handled separately What is this
+                 // option is handled first, sees that bbto->block_cache is null
+                 // and creates a block cache. I think the total is harmless,
+                 // the cache created here would be replaced by the actual cache
+                 // that would be created there
                } else if (bbto->block_cache == nullptr) {
-                // This code is copied from BlockBasedTableFactory::BlockBasedTableFactory() - Please avoid the duplication
-                // The following line wasn't copied - is that intentional?
-                //     co.low_pri_pool_ratio = 0.0;
-                // Anyway, copying should be avoided
+                 // This code is copied from
+                 // BlockBasedTableFactory::BlockBasedTableFactory() - Please
+                 // avoid the duplication The following line wasn't copied - is
+                 // that intentional?
+                 //     co.low_pri_pool_ratio = 0.0;
+                 // Anyway, copying should be avoided
                  LRUCacheOptions co;
                  co.capacity = 8 << 20;
                  // It makes little sense to pay overhead for mid-point
@@ -353,8 +358,9 @@ static std::unordered_map<std::string, OptionTypeInfo>
                return Status::OK();
              })},
         // How is it handled at the moment without this capability?
-        // Couldn't we implement the  SetParseFunc() before? Or is it now mandatory because we are using kUseBaseAddress?
-        // Duplicates (to a degree) in the index_type option 
+        // Couldn't we implement the  SetParseFunc() before? Or is it now
+        // mandatory because we are using kUseBaseAddress? Duplicates (to a
+        // degree) in the index_type option
         {"index_block_restart_interval",
          OptionTypeInfo(offsetof(struct BlockBasedTableOptions,
                                  index_block_restart_interval),
@@ -427,8 +433,8 @@ static std::unordered_map<std::string, OptionTypeInfo>
                }
                return Status::OK();
              })},
-          // Again, I am not sure if that depends on the order and the implications
-          // And again, what happens currently without the feature?
+        // Again, I am not sure if that depends on the order and the
+        // implications And again, what happens currently without the feature?
         {"partition_filters",
          OptionTypeInfo(
              offsetof(struct BlockBasedTableOptions, partition_filters),
@@ -578,7 +584,6 @@ BlockBasedTableFactory::BlockBasedTableFactory(
   // Initialize/Prepare the BlockBasedTableOptions
   // Note that comparable code is also implemented in the OptionTypeMap;
   // the code is needed here as well in order to support LITE mode
-
 
   // Can't we use this code for both?
   // What do we gain by doing it in the Options infra?
