@@ -309,6 +309,26 @@ std::string WriteBufferManager::GetPrintableOptions() const {
   return ret;
 }
 
+// this is idempotent so no harm in calling several times with the same WBM
+void WriteBufferManager::AddToDbRateMap(WriteController* wc) {
+  wc->AddToDbRateMap(&wbm_id_to_write_rate_);
+}
+
+// this is idempotent so no harm in calling several times with the same WBM
+void WriteBufferManager::RemoveFromDbRateMap(WriteController* wc) {
+  wc->RemoveFromDbRateMap(&wbm_id_to_write_rate_);
+}
+
+void WriteBufferManager::ResetDelayToken() { write_controller_token_.reset(); }
+
+void WriteBufferManager::WBMSetupDelay(WriteController* wc,
+                                       uint64_t wbm_write_rate) {
+  uint64_t min_rate_to_set = wc->InsertToMapAndGetMinRate(
+      0 /*id*/, &wbm_id_to_write_rate_, wbm_write_rate);
+
+  write_controller_token_ = wc->GetDelayToken(min_rate_to_set);
+}
+
 namespace {
 
 uint64_t CalcDelayFactor(size_t quota, size_t updated_memory_used,
@@ -434,7 +454,7 @@ void WriteBufferManager::UpdateUsageState(size_t new_memory_used,
       // by the other thread(s).
       done = coded_usage_state_.compare_exchange_strong(old_coded_usage_state,
                                                         new_coded_usage_state);
-
+      delay_state_changed_ = true;
       if (done == false) {
         // Retry. However,
         new_memory_used = memory_usage();
@@ -442,6 +462,7 @@ void WriteBufferManager::UpdateUsageState(size_t new_memory_used,
       }
     } else {
       done = true;
+      delay_state_changed_ = false;
     }
   }
 }

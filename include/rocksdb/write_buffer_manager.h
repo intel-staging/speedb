@@ -290,6 +290,20 @@ class WriteBufferManager final {
     return ParseCodedUsageState(GetCodedUsageState());
   }
 
+  bool StateChanged() const { return delay_state_changed_.load(); }
+
+  void SwitchStateChangeOff() { delay_state_changed_.store(false); }
+
+  void AddToDbRateMap(WriteController* wc);
+
+  void RemoveFromDbRateMap(WriteController* wc);
+
+  void ResetDelayToken();
+
+  uint64_t CalcDelayFromFactor(uint64_t max_write_rate, uint64_t delay_factor);
+
+  void WBMSetupDelay(WriteController* wc, uint64_t delayed_write_factor);
+
  private:
   // The usage + delay factor are coded in a single (atomic) uint64_t value as
   // follows: kNone - as 0 (kNoneCodedUsageState) kStop - as 1 + max delay
@@ -313,6 +327,14 @@ class WriteBufferManager final {
                                       uint64_t delay_factor);
   static std::pair<UsageState, uint64_t> ParseCodedUsageState(
       uint64_t coded_usage_state);
+
+  // Members used for WBM's required delay
+  // TODO: - add token per write controller.
+  std::unique_ptr<WriteControllerToken> write_controller_token_;
+
+  std::unordered_map<uint32_t, uint64_t> wbm_id_to_write_rate_;
+
+  std::atomic<bool> delay_state_changed_ = false;
 
  private:
   std::atomic<size_t> buffer_size_;

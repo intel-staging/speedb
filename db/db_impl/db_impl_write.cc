@@ -1113,12 +1113,10 @@ void DBImpl::MemTableInsertStatusCheck(const Status& status) {
 
 namespace {
 
-std::unique_ptr<WriteControllerToken> SetupDelayFromFactor(
-    WriteController& write_controller, uint64_t delay_factor) {
+uint64_t CalcDelayFromFactor(uint64_t max_write_rate, uint64_t delay_factor) {
   assert(delay_factor > 0U);
+  // TODO: do something about min rate.
   constexpr uint64_t kMinWriteRate = 16 * 1024u;  // Minimum write rate 16KB/s.
-
-  auto max_write_rate = write_controller.max_delayed_write_rate();
 
   auto wbm_write_rate = max_write_rate;
   if (max_write_rate >= kMinWriteRate) {
@@ -1132,42 +1130,37 @@ std::unique_ptr<WriteControllerToken> SetupDelayFromFactor(
     wbm_write_rate = max_write_rate * write_rate_factor;
   }
 
-  return write_controller.GetDelayToken(wbm_write_rate);
+  return wbm_write_rate;
 }
 
 }  // namespace
 
 void DBImpl::HandleWBMDelayWritesDuringPreprocessWrite() {
-  auto [new_usage_state, new_delayed_write_factor] =
+  auto [usage_state, delayed_write_factor] =
       write_buffer_manager_->GetUsageStateInfo();
 
-  if (UNLIKELY((wbm_spdb_usage_state_ != new_usage_state) ||
-               (wbm_spdb_delayed_write_factor_ != new_delayed_write_factor))) {
-    if (new_usage_state != WriteBufferManager::UsageState::kDelay) {
-      write_controller_token_.reset();
-      ROCKS_LOG_INFO(immutable_db_options_.info_log,
-                     "Reset WBM Delay Token needs-delay:%d, rate:%lu",
-                     write_controller_.NeedsDelay(),
-                     write_controller_.delayed_write_rate());
-    } else if ((wbm_spdb_usage_state_ !=
-                WriteBufferManager::UsageState::kDelay) ||
-               (wbm_spdb_delayed_write_factor_ != new_delayed_write_factor)) {
-      write_controller_token_ =
-          SetupDelayFromFactor(write_controller_, new_delayed_write_factor);
-      ROCKS_LOG_WARN(
-          immutable_db_options_.info_log,
-          "Delaying writes due to WBM's usage relative to quota "
-          "which is %" PRIu64 "%%(%" PRIu64 "/%" PRIu64
-          "). "
-          "factor:%" PRIu64 ", wbm-rate:%" PRIu64 ", rate:%" PRIu64,
-          write_buffer_manager_->GetMemoryUsagePercentageOfBufferSize(),
-          write_buffer_manager_->memory_usage(),
-          write_buffer_manager_->buffer_size(), new_delayed_write_factor,
-          write_controller_.delayed_write_rate(),
-          write_controller_.delayed_write_rate());
-    }
-    wbm_spdb_usage_state_ = new_usage_state;
-    wbm_spdb_delayed_write_factor_ = new_delayed_write_factor;
+  if (usage_state != WriteBufferManager::UsageState::kDelay) {
+    write_buffer_manager_->ResetDelayToken();
+    ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                   "Reset WBM Delay Token. WC needs-delay:%d, rate:%lu",
+                   write_controller_->NeedsDelay(),
+                   write_controller_->delayed_write_rate());
+  } else {
+    uint64_t wbm_write_rate = CalcDelayFromFactor(
+        write_controller_->max_delayed_write_rate(), delayed_write_factor);
+    write_buffer_manager_->WBMSetupDelay(write_controller_ptr(),
+                                         wbm_write_rate);
+    ROCKS_LOG_WARN(
+        immutable_db_options_.info_log,
+        "Delaying writes due to WBM's usage relative to quota "
+        "which is %" PRIu64 "%%(%" PRIu64 "/%" PRIu64
+        "). "
+        "factor:%" PRIu64 ", wbm-rate:%" PRIu64 ", rate:%" PRIu64,
+        write_buffer_manager_->GetMemoryUsagePercentageOfBufferSize(),
+        write_buffer_manager_->memory_usage(),
+        write_buffer_manager_->buffer_size(), delayed_write_factor,
+        write_controller_->delayed_write_rate(),
+        write_controller_->delayed_write_rate());
   }
 }
 
@@ -1224,8 +1217,11 @@ Status DBImpl::PreprocessWrite(const WriteOptions& write_options,
   PERF_TIMER_GUARD(write_pre_and_post_process_time);
 
   // Handle latest WBM calculated write delay, if applicable
-  if (status.ok() && write_buffer_manager_ &&
-      write_buffer_manager_->IsDelayAllowed()) {
+  // TODO: removed if write_buffer_manager_ since below it is assumed true maybe
+  // add check below as well? or we want to fail if WBM is null?
+  if (UNLIKELY(status.ok() && write_buffer_manager_->IsDelayAllowed() &&
+               write_buffer_manager_->StateChanged())) {
+    write_buffer_manager_->SwitchStateChangeOff();
     HandleWBMDelayWritesDuringPreprocessWrite();
   }
 

@@ -1705,6 +1705,7 @@ ColumnFamilySet::ColumnFamilySet(
   dummy_cfd_->prev_ = dummy_cfd_;
   dummy_cfd_->next_ = dummy_cfd_;
   write_controller_->AddToDbRateMap(&cf_id_to_write_rate_);
+  write_buffer_manager_->AddToDbRateMap(write_controller_ptr());
 }
 
 ColumnFamilySet::~ColumnFamilySet() {
@@ -1719,6 +1720,7 @@ ColumnFamilySet::~ColumnFamilySet() {
   dummy_last_ref = dummy_cfd_->UnrefAndTryDelete();
   assert(dummy_last_ref);
   write_controller_->RemoveFromDbRateMap(&cf_id_to_write_rate_);
+  write_buffer_manager_->RemoveFromDbRateMap(write_controller_ptr());
 }
 
 ColumnFamilyData* ColumnFamilySet::GetDefault() const {

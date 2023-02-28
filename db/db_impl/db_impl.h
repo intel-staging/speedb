@@ -2690,13 +2690,6 @@ class DBImpl : public DB {
   // Pointer to WriteBufferManager stalling interface.
   std::unique_ptr<StallInterface> wbm_stall_;
 
-  // Members used for WBM's required delay
-  std::unique_ptr<WriteControllerToken> write_controller_token_;
-  WriteBufferManager::UsageState wbm_spdb_usage_state_ =
-      WriteBufferManager::UsageState::kNone;
-  uint64_t wbm_spdb_delayed_write_factor_ =
-      WriteBufferManager::kNoneDelayedWriteFactor;
-
   // seqno_time_mapping_ stores the sequence number to time mapping, it's not
   // thread safe, both read and write need db mutex hold.
   SeqnoToTimeMapping seqno_time_mapping_;
