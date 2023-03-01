@@ -500,18 +500,17 @@ class ColumnFamilyData {
       WriteStallCause& write_stall_cause);
 
  private:
-  std::unique_ptr<WriteControllerToken> DynamicSetupDelay(
-      WriteController* write_controller, uint64_t compaction_needed_bytes,
-      const MutableCFOptions& mutable_cf_options,
-      WriteStallCause& write_stall_cause);
+  void DynamicSetupDelay(WriteController* write_controller,
+                         uint64_t compaction_needed_bytes,
+                         const MutableCFOptions& mutable_cf_options,
+                         WriteStallCause& write_stall_cause);
 
   double CalculateWriteDelayDividerAndMaybeUpdateWriteStallCause(
       uint64_t compaction_needed_bytes,
       const MutableCFOptions& mutable_cf_options,
       WriteStallCause& write_stall_cause);
 
-  // returns the min rate to set
-  uint64_t UpdateCFRate(uint32_t id, uint64_t write_rate);
+  void UpdateCFRate(uint32_t id, uint64_t write_rate);
 
  public:
   void set_initialized() { initialized_.store(true); }
@@ -751,7 +750,7 @@ class ColumnFamilySet {
     return write_controller_;
   }
 
-  uint64_t UpdateCFRate(uint32_t id, uint64_t write_rate);
+  void UpdateCFRate(uint32_t id, uint64_t write_rate);
 
   bool IsInRateMap(uint32_t id) { return cf_id_to_write_rate_.count(id); }
 

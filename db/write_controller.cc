@@ -23,13 +23,12 @@ std::unique_ptr<WriteControllerToken> WriteController::GetStopToken() {
 
 std::unique_ptr<WriteControllerToken> WriteController::GetDelayToken(
     uint64_t write_rate) {
-  {
-    std::lock_guard<std::mutex> lock(mu_);
-    if (0 == total_delayed_++) {
-      // Starting delay, so reset counters.
-      next_refill_time_ = 0;
-      credit_in_bytes_ = 0;
-    }
+  // this is now only accessed when use_dynamic_delay = false so no need to
+  // protect
+  if (0 == total_delayed_++) {
+    // Starting delay, so reset counters.
+    next_refill_time_ = 0;
+    credit_in_bytes_ = 0;
   }
   // NOTE: for simplicity, any current credit_in_bytes_ or "debt" in
   // next_refill_time_ will be based on an old rate. This rate will apply
@@ -49,6 +48,7 @@ void WriteController::RemoveFromDbRateMap(CfIdToRateMap* cf_map) {
   std::lock_guard<std::mutex> lock(mu_for_map_);
   db_id_to_write_rate_map_.erase(cf_map);
   if (!cf_map->empty()) {
+    total_delayed_.fetch_sub(cf_map->size());
     set_delayed_write_rate(GetMapMinRate());
   }
 }
@@ -79,11 +79,14 @@ bool WriteController::IsMinRate(uint32_t id, CfIdToRateMap* cf_map) {
   return cf_rate <= min_rate;
 }
 
-void WriteController::DeleteSelfFromMapAndMaybeUpdateDelayRate(
+// id is definitely in the rate map.
+void WriteController::DeleteCfFromMapAndMaybeUpdateDelayRate(
     uint32_t id, CfIdToRateMap* cf_map) {
   std::lock_guard<std::mutex> lock(mu_for_map_);
   bool was_min = IsMinRate(id, cf_map);
-  cf_map->erase(id);
+  [[maybe_unused]] bool erased = cf_map->erase(id);
+  assert(erased);
+  total_delayed_--;
   if (was_min) {
     set_delayed_write_rate(GetMapMinRate());
   }
@@ -94,19 +97,27 @@ void WriteController::DeleteSelfFromMapAndMaybeUpdateDelayRate(
 // the min rate (was_min) and now its write_rate is higher than the
 // delayed_write_rate_ so we need to find a new min from all cfs
 // (GetMapMinRate())
-uint64_t WriteController::InsertToMapAndGetMinRate(uint32_t id,
-                                                   CfIdToRateMap* cf_map,
-                                                   uint64_t cf_write_rate) {
+// TODO: find better name for func. divide into smaller funcs?
+void WriteController::UpdateRate(uint32_t id, CfIdToRateMap* cf_map,
+                                 uint64_t cf_write_rate) {
   std::lock_guard<std::mutex> lock(mu_for_map_);
   bool was_min = IsMinRate(id, cf_map);
-  cf_map->insert_or_assign(id, cf_write_rate);
-  if (cf_write_rate <= delayed_write_rate()) {
-    return cf_write_rate;
-  } else if (was_min) {
-    return GetMapMinRate();
-  } else {
-    return delayed_write_rate();
+  bool inserted = cf_map->insert_or_assign(id, cf_write_rate).second;
+  if (inserted) {
+    // TODO: protect with metrics_mu_. ---- acquire both locks.
+    if (0 == total_delayed_++) {
+      // Starting delay, so reset counters.
+      next_refill_time_ = 0;
+      credit_in_bytes_ = 0;
+    }
   }
+  uint64_t min_rate = delayed_write_rate();
+  if (cf_write_rate <= min_rate) {
+    min_rate = cf_write_rate;
+  } else if (was_min) {
+    min_rate = GetMapMinRate();
+  }
+  set_delayed_write_rate(min_rate);
 }
 
 void WriteController::WaitOnCV(const ErrorHandler& error_handler) {
@@ -151,7 +162,7 @@ uint64_t WriteController::GetDelay(SystemClock* clock, uint64_t num_bytes) {
   // Refill every 1 ms
   const uint64_t kMicrosPerRefill = 1000;
 
-  std::lock_guard<std::mutex> lock(mu_);
+  std::lock_guard<std::mutex> lock(metrics_mu_);
 
   if (next_refill_time_ == 0) {
     // Start with an initial allotment of bytes for one interval

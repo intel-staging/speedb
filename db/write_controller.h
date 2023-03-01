@@ -92,19 +92,16 @@ class WriteController {
 
   bool is_dynamic_delay() const { return dynamic_delay_; }
 
-  std::mutex& GetMapMutex() { return mu_for_map_; }
-
   using CfIdToRateMap = std::unordered_map<uint32_t, uint64_t>;
 
   void AddToDbRateMap(CfIdToRateMap* cf_map);
 
   void RemoveFromDbRateMap(CfIdToRateMap* cf_map);
 
-  void DeleteSelfFromMapAndMaybeUpdateDelayRate(uint32_t id,
-                                                CfIdToRateMap* cf_map);
+  void DeleteCfFromMapAndMaybeUpdateDelayRate(uint32_t id,
+                                              CfIdToRateMap* cf_map);
 
-  uint64_t InsertToMapAndGetMinRate(uint32_t id, CfIdToRateMap* cf_map,
-                                    uint64_t cf_write_rate);
+  void UpdateRate(uint32_t id, CfIdToRateMap* cf_map, uint64_t cf_write_rate);
 
   uint64_t TEST_GetMapMinRate();
 
@@ -129,7 +126,7 @@ class WriteController {
   std::atomic<int> total_compaction_pressure_;
 
   // mutex to protect below 4 members
-  std::mutex mu_;
+  std::mutex metrics_mu_;
   // Number of bytes allowed to write without delay
   std::atomic<uint64_t> credit_in_bytes_;
   // Next time that we can add more credit of bytes

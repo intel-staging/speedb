@@ -353,8 +353,6 @@ bool WriteBufferManager::RemoveFromControllersMap(WriteController* wc) {
   return false;
 }
 
-void WriteBufferManager::ResetDelayToken() { write_controller_token_.reset(); }
-
 void WriteBufferManager::WBMSetupDelay(WriteController* wc,
                                        uint64_t wbm_write_rate) {
   uint64_t min_rate_to_set = wc->InsertToMapAndGetMinRate(

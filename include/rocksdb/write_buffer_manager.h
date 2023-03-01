@@ -290,12 +290,6 @@ class WriteBufferManager final {
     return ParseCodedUsageState(GetCodedUsageState());
   }
 
-  void AddToDbRateMap(WriteController* wc);
-
-  void RemoveFromDbRateMap(WriteController* wc);
-
-  void ResetDelayToken();
-
   uint64_t CalcDelayFromFactor(uint64_t max_write_rate, uint64_t delay_factor);
 
   void WBMSetupDelay(WriteController* wc, uint64_t delayed_write_factor);
@@ -329,10 +323,14 @@ class WriteBufferManager final {
       uint64_t coded_usage_state);
 
   // Members used for WBM's required delay
-  // TODO: - add token per write controller.
-  std::unique_ptr<WriteControllerToken> write_controller_token_;
-
   std::unordered_map<uint32_t, uint64_t> wbm_id_to_write_rate_;
+
+  // a list of all write controllers which are associated with this WBM.
+  // the WBM needs to update them when its state changes and it needs delay.
+  // the key is the WC to update and the value is a ref count of how many dbs
+  // are using this WC with the WBM.
+  std::unordered_map<WriteController*, uint64_t> controllers_to_refcount_map_;
+  std::mutex controllers_map_mutex_;
 
  private:
   std::atomic<size_t> buffer_size_;
@@ -355,12 +353,6 @@ class WriteBufferManager final {
   std::atomic<bool> stall_active_;
   std::atomic<uint64_t> coded_usage_state_ = kNoneCodedUsageState;
 
-  // a list of all write controllers which are associated with this WBM.
-  // the WBM needs to update them when its state changes and it needs delay.
-  // the key is the WC to update and the value is a ref count of how many dbs
-  // are using this WC with the WBM.
-  std::unordered_map<WriteController*, uint64_t> controllers_to_refcount_map_;
-  std::mutex controllers_map_mutex_;
 
   // returns true if wc added for the first time.
   bool AddToControllersMap(WriteController* wc);
