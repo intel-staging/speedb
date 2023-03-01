@@ -1705,10 +1705,13 @@ ColumnFamilySet::ColumnFamilySet(
   dummy_cfd_->prev_ = dummy_cfd_;
   dummy_cfd_->next_ = dummy_cfd_;
   write_controller_->AddToDbRateMap(&cf_id_to_write_rate_);
-  write_buffer_manager_->AddToDbRateMap(write_controller_ptr());
+  write_buffer_manager_->RegisterWriteController(write_controller_ptr());
 }
 
 ColumnFamilySet::~ColumnFamilySet() {
+  // TODO: think about order of calling this
+  write_buffer_manager_->DeregisterWriteController(write_controller_ptr());
+  write_controller_->RemoveFromDbRateMap(&cf_id_to_write_rate_);
   while (column_family_data_.size() > 0) {
     // cfd destructor will delete itself from column_family_data_
     auto cfd = column_family_data_.begin()->second;
@@ -1719,8 +1722,6 @@ ColumnFamilySet::~ColumnFamilySet() {
   bool dummy_last_ref __attribute__((__unused__));
   dummy_last_ref = dummy_cfd_->UnrefAndTryDelete();
   assert(dummy_last_ref);
-  write_controller_->RemoveFromDbRateMap(&cf_id_to_write_rate_);
-  write_buffer_manager_->RemoveFromDbRateMap(write_controller_ptr());
 }
 
 ColumnFamilyData* ColumnFamilySet::GetDefault() const {

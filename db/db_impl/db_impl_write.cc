@@ -1219,9 +1219,7 @@ Status DBImpl::PreprocessWrite(const WriteOptions& write_options,
   // Handle latest WBM calculated write delay, if applicable
   // TODO: removed if write_buffer_manager_ since below it is assumed true maybe
   // add check below as well? or we want to fail if WBM is null?
-  if (UNLIKELY(status.ok() && write_buffer_manager_->IsDelayAllowed() &&
-               write_buffer_manager_->StateChanged())) {
-    write_buffer_manager_->SwitchStateChangeOff();
+  if (UNLIKELY(status.ok() && write_buffer_manager_->IsDelayAllowed())) {
     HandleWBMDelayWritesDuringPreprocessWrite();
   }
 

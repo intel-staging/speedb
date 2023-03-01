@@ -48,9 +48,12 @@ void WriteController::AddToDbRateMap(CfIdToRateMap* cf_map) {
 void WriteController::RemoveFromDbRateMap(CfIdToRateMap* cf_map) {
   std::lock_guard<std::mutex> lock(mu_for_map_);
   db_id_to_write_rate_map_.erase(cf_map);
+  if (!cf_map->empty()) {
+    set_delayed_write_rate(GetMapMinRate());
+  }
 }
 
-// REQUIRES: write_controller map mutex held.
+// REQUIRES: write_controller mu_for_map_ mutex held.
 uint64_t WriteController::GetMapMinRate() {
   uint64_t min_rate = max_delayed_write_rate();
   for (auto cf_id_to_write_rate_ : db_id_to_write_rate_map_) {

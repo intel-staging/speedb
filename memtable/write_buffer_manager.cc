@@ -309,14 +309,48 @@ std::string WriteBufferManager::GetPrintableOptions() const {
   return ret;
 }
 
-// this is idempotent so no harm in calling several times with the same WBM
-void WriteBufferManager::AddToDbRateMap(WriteController* wc) {
-  wc->AddToDbRateMap(&wbm_id_to_write_rate_);
+void WriteBufferManager::RegisterWriteController(WriteController* wc) {
+  bool first_entry = AddToControllersMap(wc);
+  if (first_entry) {
+    wc->AddToDbRateMap(&wbm_id_to_write_rate_);
+  }
 }
 
-// this is idempotent so no harm in calling several times with the same WBM
-void WriteBufferManager::RemoveFromDbRateMap(WriteController* wc) {
-  wc->RemoveFromDbRateMap(&wbm_id_to_write_rate_);
+void WriteBufferManager::DeregisterWriteController(WriteController* wc) {
+  bool last_entry = RemoveFromControllersMap(wc);
+  if (last_entry) {
+    wc->RemoveFromDbRateMap(&wbm_id_to_write_rate_);
+  }
+}
+
+// Add this Write Controller(WC) to controllers_to_refcount_map_
+// which the WBM is responsible for updating (when stalling is allowed).
+// each time db is opened with this WC-WBM, add a ref count so we know when
+// to remove this WC from the WBM when the last is no longer used.
+//
+// list of WCs: unordered_map of pointers to WCs and ref count as value
+bool WriteBufferManager::AddToControllersMap(WriteController* wc) {
+  std::lock_guard<std::mutex> lock(controllers_map_mutex_);
+  if (controllers_to_refcount_map_.count(wc)) {
+    controllers_to_refcount_map_[wc]++;
+    return false;
+  } else {
+    controllers_to_refcount_map_.insert({wc, 1});
+    return true;
+  }
+}
+
+bool WriteBufferManager::RemoveFromControllersMap(WriteController* wc) {
+  std::lock_guard<std::mutex> lock(controllers_map_mutex_);
+  // can controllers_to_refcount_map_[wc] be seg fault?
+  // the detor of col fam set is called with the same WC-WBM as the ctor?
+  assert(controllers_to_refcount_map_[wc] > 0);
+  controllers_to_refcount_map_[wc]--;
+  if (controllers_to_refcount_map_[wc] == 0) {
+    controllers_to_refcount_map_.erase(wc);
+    return true;
+  }
+  return false;
 }
 
 void WriteBufferManager::ResetDelayToken() { write_controller_token_.reset(); }
@@ -438,6 +472,9 @@ void WriteBufferManager::UpdateUsageState(size_t new_memory_used,
     return;
   }
 
+  //
+  // TODO: notify WCs if state changed.
+  //
   auto done = false;
   auto old_coded_usage_state = coded_usage_state_.load();
   auto new_coded_usage_state = old_coded_usage_state;
@@ -454,7 +491,6 @@ void WriteBufferManager::UpdateUsageState(size_t new_memory_used,
       // by the other thread(s).
       done = coded_usage_state_.compare_exchange_strong(old_coded_usage_state,
                                                         new_coded_usage_state);
-      delay_state_changed_ = true;
       if (done == false) {
         // Retry. However,
         new_memory_used = memory_usage();
@@ -462,12 +498,11 @@ void WriteBufferManager::UpdateUsageState(size_t new_memory_used,
       }
     } else {
       done = true;
-      delay_state_changed_ = false;
     }
   }
 }
 
-// ================================================================================================
+// =============================================================================
 void WriteBufferManager::RegisterFlushInitiator(
     void* initiator, InitiateFlushRequestCb request) {
   {
