@@ -94,14 +94,16 @@ class WriteController {
 
   using CfIdToRateMap = std::unordered_map<uint32_t, uint64_t>;
 
-  void AddToDbRateMap(CfIdToRateMap* cf_map);
+  void MaybeResetCounters();
 
-  void RemoveFromDbRateMap(CfIdToRateMap* cf_map);
+  void AddDBToRateMap(uint64_t db_id);
 
-  void DeleteCfFromMapAndMaybeUpdateDelayRate(uint32_t id,
-                                              CfIdToRateMap* cf_map);
+  void RemoveDBFromRateMap(uint64_t db_id);
 
-  void UpdateRate(uint32_t id, CfIdToRateMap* cf_map, uint64_t cf_write_rate);
+  void HandleRemoveDelayReq(uint32_t cf_id, uint64_t db_id);
+
+  void HandleNewDelayReq(uint32_t cf_id, uint64_t db_id,
+                         uint64_t cf_write_rate);
 
   uint64_t TEST_GetMapMinRate();
 
@@ -109,7 +111,11 @@ class WriteController {
   void NotifyCV();
 
  private:
-  bool IsMinRate(uint32_t id, CfIdToRateMap* cf_map);
+  bool IsMinRate(uint32_t cf_id, CfIdToRateMap& cf_map);
+
+  bool IsInRateMap(uint32_t cf_id, CfIdToRateMap& cf_map);
+
+  bool RemoveDelayReq(uint32_t cf_id, CfIdToRateMap& cf_map);
 
   // returns the min rate from db_id_to_write_rate_map_
   uint64_t GetMapMinRate();
@@ -128,9 +134,9 @@ class WriteController {
   // mutex to protect below 4 members
   std::mutex metrics_mu_;
   // Number of bytes allowed to write without delay
-  std::atomic<uint64_t> credit_in_bytes_;
+  std::atomic<uint64_t> credit_in_bytes_ = 0;
   // Next time that we can add more credit of bytes
-  std::atomic<uint64_t> next_refill_time_;
+  std::atomic<uint64_t> next_refill_time_ = 0;
   // Write rate set when initialization or by `DBImpl::SetDBOptions`
   std::atomic<uint64_t> max_delayed_write_rate_;
   // Current write rate (bytes / second)
@@ -139,12 +145,12 @@ class WriteController {
   // Whether Speedb's dynamic delay is used
   bool dynamic_delay_;
 
-  std::mutex mu_for_map_;
-  std::unordered_set<CfIdToRateMap*> db_id_to_write_rate_map_;
+  std::mutex map_mu_;
+  std::unordered_map<uint64_t, CfIdToRateMap> db_id_to_write_rate_map_;
 
   std::condition_variable stop_cv_;
   // The mutex used by stop_cv_
-  std::mutex stop_mutex_;
+  std::mutex stop_mu_;
 
   std::unique_ptr<RateLimiter> low_pri_rate_limiter_;
 };

@@ -1699,14 +1699,19 @@ ColumnFamilySet::ColumnFamilySet(
   // initialize linked list
   dummy_cfd_->prev_ = dummy_cfd_;
   dummy_cfd_->next_ = dummy_cfd_;
-  write_controller_->AddToDbRateMap(&cf_id_to_write_rate_);
-  write_buffer_manager_->RegisterWriteController(write_controller_ptr());
+  // TOASK: is this the correct way to turn this* to a unique identifier?
+  db_rate_id_ = reinterpret_cast<uint64_t>(this);
+  if (write_controller_->is_dynamic_delay()) {
+    write_controller_->AddDBToRateMap(db_rate_id_);
+    write_buffer_manager_->RegisterWriteController(write_controller_ptr());
+  }
 }
 
 ColumnFamilySet::~ColumnFamilySet() {
-  // TODO: think about order of calling this
-  write_buffer_manager_->DeregisterWriteController(write_controller_ptr());
-  write_controller_->RemoveFromDbRateMap(&cf_id_to_write_rate_);
+  if (write_controller_->is_dynamic_delay()) {
+    write_controller_->RemoveDBFromRateMap(db_rate_id_);
+    write_buffer_manager_->DeregisterWriteController(write_controller_ptr());
+  }
   while (column_family_data_.size() > 0) {
     // cfd destructor will delete itself from column_family_data_
     auto cfd = column_family_data_.begin()->second;
@@ -1783,18 +1788,14 @@ ColumnFamilyData* ColumnFamilySet::CreateColumnFamily(
   return new_cfd;
 }
 
-// returns the min rate to set
 void ColumnFamilySet::UpdateCFRate(uint32_t id, uint64_t write_rate) {
-  write_controller_->UpdateRate(id, &cf_id_to_write_rate_, write_rate);
+  write_controller_->HandleNewDelayReq(id, db_rate_id_, write_rate);
 }
 
 // Removes the cf from the cf_id_to_write_rate_ map if it exists and if this cf
 // was the one with the min write rate then find and set a new min.
 void ColumnFamilySet::DeleteSelfFromMapAndMaybeUpdateDelayRate(uint32_t id) {
-  if (IsInRateMap(id)) {
-    write_controller_->DeleteCfFromMapAndMaybeUpdateDelayRate(
-        id, &cf_id_to_write_rate_);
-  }
+  write_controller_->HandleRemoveDelayReq(id, db_rate_id_);
 }
 
 // under a DB mutex AND from a write thread

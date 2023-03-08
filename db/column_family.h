@@ -752,8 +752,6 @@ class ColumnFamilySet {
 
   void UpdateCFRate(uint32_t id, uint64_t write_rate);
 
-  bool IsInRateMap(uint32_t id) { return cf_id_to_write_rate_.count(id); }
-
   // try and remove the cf id from WriteController::cf_id_to_write_rate_.
   // if successful and it was the min rate, set the current minimum value.
   void DeleteSelfFromMapAndMaybeUpdateDelayRate(uint32_t id);
@@ -796,7 +794,7 @@ class ColumnFamilySet {
   const std::string& db_id_;
   std::string db_session_id_;
 
-  std::unordered_map<uint32_t, uint64_t> cf_id_to_write_rate_;
+  uint64_t db_rate_id_;
 };
 
 // A wrapper for ColumnFamilySet that supports releasing DB mutex during each

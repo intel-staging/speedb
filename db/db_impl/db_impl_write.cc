@@ -1111,59 +1111,6 @@ void DBImpl::MemTableInsertStatusCheck(const Status& status) {
   }
 }
 
-namespace {
-
-uint64_t CalcDelayFromFactor(uint64_t max_write_rate, uint64_t delay_factor) {
-  assert(delay_factor > 0U);
-  // TODO: do something about min rate.
-  constexpr uint64_t kMinWriteRate = 16 * 1024u;  // Minimum write rate 16KB/s.
-
-  auto wbm_write_rate = max_write_rate;
-  if (max_write_rate >= kMinWriteRate) {
-    // If user gives rate less than kMinWriteRate, don't adjust it.
-    assert(delay_factor <= WriteBufferManager::kMaxDelayedWriteFactor);
-    auto write_rate_factor =
-        static_cast<double>(WriteBufferManager::kMaxDelayedWriteFactor +
-                            WriteBufferManager::kMinDelayedWriteFactor -
-                            delay_factor) /
-        WriteBufferManager::kMaxDelayedWriteFactor;
-    wbm_write_rate = max_write_rate * write_rate_factor;
-  }
-
-  return wbm_write_rate;
-}
-
-}  // namespace
-
-void DBImpl::HandleWBMDelayWritesDuringPreprocessWrite() {
-  auto [usage_state, delayed_write_factor] =
-      write_buffer_manager_->GetUsageStateInfo();
-
-  if (usage_state != WriteBufferManager::UsageState::kDelay) {
-    write_buffer_manager_->ResetDelayToken();
-    ROCKS_LOG_INFO(immutable_db_options_.info_log,
-                   "Reset WBM Delay Token. WC needs-delay:%d, rate:%lu",
-                   write_controller_->NeedsDelay(),
-                   write_controller_->delayed_write_rate());
-  } else {
-    uint64_t wbm_write_rate = CalcDelayFromFactor(
-        write_controller_->max_delayed_write_rate(), delayed_write_factor);
-    write_buffer_manager_->WBMSetupDelay(write_controller_ptr(),
-                                         wbm_write_rate);
-    ROCKS_LOG_WARN(
-        immutable_db_options_.info_log,
-        "Delaying writes due to WBM's usage relative to quota "
-        "which is %" PRIu64 "%%(%" PRIu64 "/%" PRIu64
-        "). "
-        "factor:%" PRIu64 ", wbm-rate:%" PRIu64 ", rate:%" PRIu64,
-        write_buffer_manager_->GetMemoryUsagePercentageOfBufferSize(),
-        write_buffer_manager_->memory_usage(),
-        write_buffer_manager_->buffer_size(), delayed_write_factor,
-        write_controller_->delayed_write_rate(),
-        write_controller_->delayed_write_rate());
-  }
-}
-
 Status DBImpl::PreprocessWrite(const WriteOptions& write_options,
                                LogContext* log_context,
                                WriteContext* write_context) {
@@ -1215,13 +1162,6 @@ Status DBImpl::PreprocessWrite(const WriteOptions& write_options,
 
   PERF_TIMER_STOP(write_scheduling_flushes_compactions_time);
   PERF_TIMER_GUARD(write_pre_and_post_process_time);
-
-  // Handle latest WBM calculated write delay, if applicable
-  // TODO: removed if write_buffer_manager_ since below it is assumed true maybe
-  // add check below as well? or we want to fail if WBM is null?
-  if (UNLIKELY(status.ok() && write_buffer_manager_->IsDelayAllowed())) {
-    HandleWBMDelayWritesDuringPreprocessWrite();
-  }
 
   if (UNLIKELY(status.ok() && (write_controller_->IsStopped() ||
                                write_controller_->NeedsDelay()))) {

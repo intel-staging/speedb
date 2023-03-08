@@ -30,6 +30,8 @@ struct Options;
 class CacheReservationManager;
 class InstrumentedMutex;
 class InstrumentedCondVar;
+// including write_controller.h leads to compilation errors.
+class WriteController;
 
 // Interface to block and signal DB instances, intended for RocksDB
 // internal use only. Each DB instance contains ptr to StallInterface.
@@ -46,6 +48,7 @@ class WriteBufferManager final {
  public:
   // Delay Mechanism (allow_delays_and_stalls==true) definitions
   static constexpr uint64_t kStartDelayPercentThreshold = 80U;
+  static constexpr uint64_t kNumberOfDelaySteps = 50;
 
   enum class UsageState { kNone, kDelay, kStop };
 
@@ -290,10 +293,6 @@ class WriteBufferManager final {
     return ParseCodedUsageState(GetCodedUsageState());
   }
 
-  uint64_t CalcDelayFromFactor(uint64_t max_write_rate, uint64_t delay_factor);
-
-  void WBMSetupDelay(WriteController* wc, uint64_t delayed_write_factor);
-
   void RegisterWriteController(WriteController* wc);
 
   void DeregisterWriteController(WriteController* wc);
@@ -305,6 +304,7 @@ class WriteBufferManager final {
   // will actually be used for the delay token
   static constexpr uint64_t kNoneCodedUsageState = 0U;
   static constexpr uint64_t kStopCodedUsageState = kMaxDelayedWriteFactor + 1;
+  static constexpr uint64_t kWBMId = 0U;
 
   void UpdateUsageState(size_t new_memory_used, ssize_t mem_changed_size,
                         size_t quota);
@@ -322,8 +322,13 @@ class WriteBufferManager final {
   static std::pair<UsageState, uint64_t> ParseCodedUsageState(
       uint64_t coded_usage_state);
 
-  // Members used for WBM's required delay
-  std::unordered_map<uint32_t, uint64_t> wbm_id_to_write_rate_;
+  void UpdateControllerDelayState();
+
+  void ResetDelay();
+
+  void WBMSetupDelay(uint64_t delay_factor);
+
+  uint64_t wbm_rate_id_;
 
   // a list of all write controllers which are associated with this WBM.
   // the WBM needs to update them when its state changes and it needs delay.

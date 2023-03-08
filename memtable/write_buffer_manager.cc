@@ -54,6 +54,7 @@ WriteBufferManager::WriteBufferManager(
   if (initiate_flushes_) {
     InitFlushInitiationVars(buffer_size());
   }
+  wbm_rate_id_ = reinterpret_cast<uint64_t>(this);
 }
 
 WriteBufferManager::~WriteBufferManager() {
@@ -312,14 +313,14 @@ std::string WriteBufferManager::GetPrintableOptions() const {
 void WriteBufferManager::RegisterWriteController(WriteController* wc) {
   bool first_entry = AddToControllersMap(wc);
   if (first_entry) {
-    wc->AddToDbRateMap(&wbm_id_to_write_rate_);
+    wc->AddDBToRateMap(wbm_rate_id_);
   }
 }
 
 void WriteBufferManager::DeregisterWriteController(WriteController* wc) {
   bool last_entry = RemoveFromControllersMap(wc);
   if (last_entry) {
-    wc->RemoveFromDbRateMap(&wbm_id_to_write_rate_);
+    wc->RemoveDBFromRateMap(wbm_rate_id_);
   }
 }
 
@@ -342,23 +343,17 @@ bool WriteBufferManager::AddToControllersMap(WriteController* wc) {
 
 bool WriteBufferManager::RemoveFromControllersMap(WriteController* wc) {
   std::lock_guard<std::mutex> lock(controllers_map_mutex_);
-  // can controllers_to_refcount_map_[wc] be seg fault?
-  // the detor of col fam set is called with the same WC-WBM as the ctor?
-  assert(controllers_to_refcount_map_[wc] > 0);
-  controllers_to_refcount_map_[wc]--;
-  if (controllers_to_refcount_map_[wc] == 0) {
-    controllers_to_refcount_map_.erase(wc);
-    return true;
+  if (controllers_to_refcount_map_.count(wc)) {
+    assert(controllers_to_refcount_map_[wc] > 0);
+    controllers_to_refcount_map_[wc]--;
+    if (controllers_to_refcount_map_[wc] == 0) {
+      controllers_to_refcount_map_.erase(wc);
+      return true;
+    } else {
+      return false;
+    }
   }
   return false;
-}
-
-void WriteBufferManager::WBMSetupDelay(WriteController* wc,
-                                       uint64_t wbm_write_rate) {
-  uint64_t min_rate_to_set = wc->InsertToMapAndGetMinRate(
-      0 /*id*/, &wbm_id_to_write_rate_, wbm_write_rate);
-
-  write_controller_token_ = wc->GetDelayToken(min_rate_to_set);
 }
 
 namespace {
@@ -378,7 +373,63 @@ uint64_t CalcDelayFactor(size_t quota, size_t updated_memory_used,
   return delay_factor;
 }
 
+uint64_t CalcDelayFromFactor(uint64_t max_write_rate, uint64_t delay_factor) {
+  assert(delay_factor > 0U);
+  constexpr uint64_t kMinWriteRate = 16 * 1024u;  // Minimum write rate 16KB/s.
+
+  auto wbm_write_rate = max_write_rate;
+  if (max_write_rate >= kMinWriteRate) {
+    // If user gives rate less than kMinWriteRate, don't adjust it.
+    assert(delay_factor <= WriteBufferManager::kMaxDelayedWriteFactor);
+    auto write_rate_factor =
+        static_cast<double>(WriteBufferManager::kMaxDelayedWriteFactor +
+                            WriteBufferManager::kMinDelayedWriteFactor -
+                            delay_factor) /
+        WriteBufferManager::kMaxDelayedWriteFactor;
+    wbm_write_rate = max_write_rate * write_rate_factor;
+  }
+
+  return wbm_write_rate;
+}
+
 }  // Unnamed Namespace
+
+void WriteBufferManager::WBMSetupDelay(uint64_t delay_factor) {
+  for (auto& wc_and_ref_count : controllers_to_refcount_map_) {
+    // the final rate is dependant on the write controllers max rate so
+    // each wc can have a different delay requirement.
+    WriteController* wc = wc_and_ref_count.first;
+    uint64_t wbm_write_rate =
+        CalcDelayFromFactor(wc->max_delayed_write_rate(), delay_factor);
+    wc->HandleNewDelayReq(kWBMId /*id*/, wbm_rate_id_, wbm_write_rate);
+  }
+  // TODO: add reporting.
+}
+
+void WriteBufferManager::ResetDelay() {
+  // need to do for each wc connected:
+  // remove this wbm from db_id_to_write_rate_map_[wbm_rate_id_].
+  // then , decrease total_delay and set a new rate if was min.
+  // TOASK: how to properly ignore refcount?
+  for (auto& wc_and_ref_count : controllers_to_refcount_map_) {
+    wc_and_ref_count.first->HandleRemoveDelayReq(kWBMId, wbm_rate_id_);
+  }
+  // TODO: things to report:   // TOASK: how to report? pass info_log here?
+  // 1. that WBM initiated reset.
+  // 2. list all connected WCs and their write rate.
+}
+
+void WriteBufferManager::UpdateControllerDelayState() {
+  auto [usage_state, delay_factor] = GetUsageStateInfo();
+
+  if (usage_state == UsageState::kDelay) {
+    WBMSetupDelay(delay_factor);
+  } else {
+    // check if this WMB has an active delay request.
+    // if yes, remove it and maybe set a different rate.
+    ResetDelay();
+  }
+}
 
 uint64_t WriteBufferManager::CalcNewCodedUsageState(
     size_t new_memory_used, ssize_t memory_changed_size, size_t quota,
@@ -389,8 +440,9 @@ uint64_t WriteBufferManager::CalcNewCodedUsageState(
   auto new_usage_state = old_usage_state;
   auto new_delay_factor = old_delay_factor;
   auto usage_start_delay_threshold =
-      (WriteBufferManager::kStartDelayPercentThreshold * quota) / 100;
-  auto change_steps = quota / 100;
+      (WriteBufferManager::kStartDelayPercentThreshold / 100) * quota;
+  // TODO: check here
+  auto change_steps = quota / kNumberOfDelaySteps;
 
   if (new_memory_used < usage_start_delay_threshold) {
     new_usage_state = WriteBufferManager::UsageState::kNone;
@@ -466,13 +518,11 @@ void WriteBufferManager::UpdateUsageState(size_t new_memory_used,
                                           ssize_t memory_changed_size,
                                           size_t quota) {
   assert(enabled());
-  if (allow_delays_and_stalls_ == false) {
+  if (allow_delays_and_stalls_ == false ||
+      controllers_to_refcount_map_.empty()) {
     return;
   }
 
-  //
-  // TODO: notify WCs if state changed.
-  //
   auto done = false;
   auto old_coded_usage_state = coded_usage_state_.load();
   auto new_coded_usage_state = old_coded_usage_state;
@@ -487,12 +537,15 @@ void WriteBufferManager::UpdateUsageState(size_t new_memory_used,
       // calculation irrelevant. In case has_update_succeeded==false,
       // old_coded_usage_state will be the value of the state that was updated
       // by the other thread(s).
-      done = coded_usage_state_.compare_exchange_strong(old_coded_usage_state,
-                                                        new_coded_usage_state);
+      done = coded_usage_state_.compare_exchange_weak(old_coded_usage_state,
+                                                      new_coded_usage_state);
       if (done == false) {
         // Retry. However,
         new_memory_used = memory_usage();
         memory_changed_size = 0U;
+      } else {
+        // WBM state has changed. need to update the WCs.
+        UpdateControllerDelayState();
       }
     } else {
       done = true;
