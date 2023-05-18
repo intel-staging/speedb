@@ -1549,7 +1549,14 @@ void BlockBasedTableBuilder::WritePropertiesBlock(
         rep_->ioptions.merge_operator != nullptr
             ? rep_->ioptions.merge_operator->Name()
             : "nullptr";
-    rep_->props.compression_name = rep_->compressor->GetId();
+    std::string compression_name;
+    if (rep_->compressor->GetCompressionType() == kPluginCompression) {
+      ConfigOptions config_options;
+      compression_name = rep_->compressor->ToString(config_options);
+    } else {
+      compression_name = rep_->compressor->GetId();
+    }
+    rep_->props.compression_name = compression_name;
     rep_->props.prefix_extractor_name =
         rep_->moptions.prefix_extractor != nullptr
             ? rep_->moptions.prefix_extractor->AsString()
