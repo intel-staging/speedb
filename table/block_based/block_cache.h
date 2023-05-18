@@ -16,6 +16,7 @@
 #include "table/block_based/block_type.h"
 #include "table/block_based/parsed_full_filter_block.h"
 #include "table/format.h"
+#include "util/compressor.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -70,14 +71,15 @@ class Block_kMetaIndex : public Block {
 struct BlockCreateContext : public Cache::CreateContext {
   BlockCreateContext() {}
   BlockCreateContext(const BlockBasedTableOptions* _table_options,
-                     Statistics* _statistics, bool _using_zstd)
+                     Statistics* _statistics,
+                     const std::shared_ptr<Compressor>& _compressor)
       : table_options(_table_options),
         statistics(_statistics),
-        using_zstd(_using_zstd) {}
+        compressor(_compressor) {}
 
   const BlockBasedTableOptions* table_options = nullptr;
   Statistics* statistics = nullptr;
-  bool using_zstd = false;
+  std::shared_ptr<Compressor> compressor;
 
   // For TypedCacheInterface
   template <typename TBlocklike>

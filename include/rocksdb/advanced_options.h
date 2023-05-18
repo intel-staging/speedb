@@ -85,6 +85,7 @@ struct CompactionOptionsFIFO {
 
 // Compression options for different compression algorithms like Zlib
 struct CompressionOptions {
+  static const char* kName() { return "CompressionOptions"; }
   // RocksDB's generic default compression level. Internally it'll be translated
   // to the default compression level specific to the library being used (see
   // comment above `ColumnFamilyOptions::compression`).

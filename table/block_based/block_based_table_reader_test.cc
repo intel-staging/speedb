@@ -25,6 +25,7 @@
 #include "table/format.h"
 #include "test_util/testharness.h"
 #include "test_util/testutil.h"
+#include "util/compressor.h"
 #include "util/random.h"
 
 namespace ROCKSDB_NAMESPACE {
@@ -93,10 +94,11 @@ class BlockBasedTableReaderBaseTest : public testing::Test {
     IntTblPropCollectorFactories factories;
     std::unique_ptr<TableBuilder> table_builder(
         options_.table_factory->NewTableBuilder(
-            TableBuilderOptions(ioptions, moptions, comparator, &factories,
-                                compression_type, CompressionOptions(),
-                                0 /* column_family_id */,
-                                kDefaultColumnFamilyName, -1 /* level */),
+            TableBuilderOptions(
+                ioptions, moptions, comparator, &factories,
+                BuiltinCompressor::GetCompressor(compression_type),
+                0 /* column_family_id */, kDefaultColumnFamilyName,
+                -1 /* level */),
             writer.get()));
 
     // Build table.
@@ -182,10 +184,12 @@ class BlockBasedTableReaderBaseTest : public testing::Test {
 class BlockBasedTableReaderTest
     : public BlockBasedTableReaderBaseTest,
       public testing::WithParamInterface<std::tuple<
-          CompressionType, bool, BlockBasedTableOptions::IndexType, bool>> {
+          std::string, bool, BlockBasedTableOptions::IndexType, bool>> {
  protected:
   void SetUp() override {
-    compression_type_ = std::get<0>(GetParam());
+    compression_name_ = std::get<0>(GetParam());
+    ASSERT_TRUE(
+        BuiltinCompressor::StringToType(compression_name_, &compression_type_));
     use_direct_reads_ = std::get<1>(GetParam());
     BlockBasedTableReaderBaseTest::SetUp();
   }
@@ -198,6 +202,7 @@ class BlockBasedTableReaderTest
         static_cast<BlockBasedTableFactory*>(NewBlockBasedTableFactory(opts)));
   }
 
+  std::string compression_name_;
   CompressionType compression_type_;
   bool use_direct_reads_;
 };
@@ -226,8 +231,8 @@ TEST_P(BlockBasedTableReaderTest, MultiGet) {
     }
   }
 
-  std::string table_name =
-      "BlockBasedTableReaderTest" + CompressionTypeToString(compression_type_);
+  std::string table_name = "BlockBasedTableReaderTest" +
+                           BuiltinCompressor::TypeToString(compression_type_);
   CreateTable(table_name, compression_type_, kv);
 
   std::unique_ptr<BlockBasedTable> table;
@@ -493,8 +498,8 @@ TEST_P(BlockBasedTableReaderTestVerifyChecksum, ChecksumMismatch) {
   std::map<std::string, std::string> kv =
       BlockBasedTableReaderBaseTest::GenerateKVMap(800 /* num_block */);
 
-  std::string table_name =
-      "BlockBasedTableReaderTest" + CompressionTypeToString(compression_type_);
+  std::string table_name = "BlockBasedTableReaderTest" +
+                           BuiltinCompressor::TypeToString(compression_type_);
   CreateTable(table_name, compression_type_, kv);
 
   std::unique_ptr<BlockBasedTable> table;
@@ -540,13 +545,13 @@ TEST_P(BlockBasedTableReaderTestVerifyChecksum, ChecksumMismatch) {
 INSTANTIATE_TEST_CASE_P(
     MultiGet, BlockBasedTableReaderTest,
     ::testing::Combine(
-        ::testing::ValuesIn(GetSupportedCompressions()), ::testing::Bool(),
+        ::testing::ValuesIn(Compressor::GetSupported()), ::testing::Bool(),
         ::testing::Values(BlockBasedTableOptions::IndexType::kBinarySearch),
         ::testing::Values(false)));
 INSTANTIATE_TEST_CASE_P(
     VerifyChecksum, BlockBasedTableReaderTestVerifyChecksum,
     ::testing::Combine(
-        ::testing::ValuesIn(GetSupportedCompressions()),
+        ::testing::ValuesIn(Compressor::GetSupported()),
         ::testing::Values(false),
         ::testing::Values(
             BlockBasedTableOptions::IndexType::kTwoLevelIndexSearch),
