@@ -112,9 +112,9 @@ Status Compressor::CreateFromString(const ConfigOptions& config_options,
                                     const std::string& value,
                                     std::shared_ptr<Compressor>* result) {
   std::string id;
-  std::unordered_map<std::string, std::string> opt_map;
+  OptionProperties props;
   Status status = Customizable::GetOptionsMap(config_options, result->get(),
-                                              value, &id, &opt_map);
+                                              value, &id, &props);
   if (!status.ok()) {  // GetOptionsMap failed
     return status;
   } else if (value.empty() || value == kNullptrString) {
@@ -142,16 +142,16 @@ Status Compressor::CreateFromString(const ConfigOptions& config_options,
     //     In this case, we create a new compressor and see if it matches
     //     and existing one.  If so, we return the existing one.
     //     If not, we create a new one and add it to the lsit
-    if (!opt_map.empty() || vit == compressors_.end() || vit->second.empty()) {
+    if (!props.empty() || vit == compressors_.end() || vit->second.empty()) {
       // Either there are none in the list or there are options.  Create one
       status = NewCompressor(config_options, id, &compressor);
       if (status.ok()) {
         status = Customizable::ConfigureNewObject(config_options,
-                                                  compressor.get(), opt_map);
+                                                  compressor.get(), props);
       }
     }
     if (vit != compressors_.end() && !vit->second.empty()) {
-      if (opt_map.empty()) {
+      if (props.empty()) {
         // Case 2: There are no options
         for (const auto& cit : vit->second) {
           auto other = cit.lock();

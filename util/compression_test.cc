@@ -494,7 +494,7 @@ TEST(Compression, StringFromColumnFamilyOptions) {
   AddCompressorFactory<DummyCompressor<1>>(library);
   std::string compressor_name = DummyCompressor<1>::kClassName();
   std::string opts_str =
-      "{id=" + compressor_name + ";option_int=1;option_str=str1;}";
+      "{id=" + compressor_name + ";option_str=str1;option_int=1}";
 
   ColumnFamilyOptions options, new_options;
   Status s = GetColumnFamilyOptionsFromString(
@@ -541,13 +541,13 @@ TEST(Compression, ColumnFamilyOptionsFromStringWithCompressionPerLevel) {
   AddCompressorFactory<DummyCompressor<1>>(library);
   std::string opts_str1 =
       "{id=" + std::string(DummyCompressor<1>::kClassName()) +
-      ";option_int=1;option_str=str1;}";
+      ";option_str=str1;option_int=1}";
   std::string opts_str2 =
       "{id=" + std::string(DummyCompressor<1>::kClassName()) +
-      ";option_int=2;option_str=str2;}";
+      ";option_str=str2;option_int=2}";
 
   ColumnFamilyOptions options, new_options;
-  std::string opts = "compressor_per_level={NoCompression:" + opts_str1 + ":" +
+  std::string opts = "compressor_per_level={{id=NoCompression;parallel_threads=1}:" + opts_str1 + ":" +
                      opts_str2 + "}";
   Status s = GetColumnFamilyOptionsFromString(config_options, options, opts,
                                               &new_options);
@@ -576,7 +576,7 @@ TEST(Compression, ColumnFamilyOptionsFromStringWithCompressionPerLevel) {
   ASSERT_OK(s);
   ASSERT_TRUE(
       opts_serialized.find(
-          "compressor_per_level={{id=NoCompression;parallel_threads=1;}:" +
+          "compressor_per_level={{id=NoCompression;parallel_threads=1}:" +
           opts_str1 + ":" + opts_str2 + "}") != std::string::npos);
 }
 
