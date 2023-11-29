@@ -547,8 +547,9 @@ TEST(Compression, ColumnFamilyOptionsFromStringWithCompressionPerLevel) {
       ";option_str=str2;option_int=2}";
 
   ColumnFamilyOptions options, new_options;
-  std::string opts = "compressor_per_level={{id=NoCompression;parallel_threads=1}:" + opts_str1 + ":" +
-                     opts_str2 + "}";
+  std::string opts =
+      "compressor_per_level={{id=NoCompression;parallel_threads=1}:" +
+      opts_str1 + ":" + opts_str2 + "}";
   Status s = GetColumnFamilyOptionsFromString(config_options, options, opts,
                                               &new_options);
   ASSERT_OK(s);
